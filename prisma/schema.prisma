@@ -1,0 +1,496 @@
+// CubClubs — anonymous club reviews for Columbia & Barnard.
+//
+// Anonymity model: we never ask a reviewer for any identifying information at
+// all — no email, no account. A submitted review sits as `PENDING` until a
+// moderator approves it, which is the only gate between submission and
+// publication (mirroring the community-contributions model below). Abuse is
+// handled by IP-based rate limiting (see SubmissionAttempt), not identity.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Clubs & taxonomy
+// ---------------------------------------------------------------------------
+
+/// Where a club came from.
+enum ClubOrigin {
+  /// Imported from a school's own student group directory.
+  DIRECTORY
+  /// Submitted by a student and approved by a moderator. These are not
+  /// officially recognized by the university, and the UI says so.
+  COMMUNITY
+}
+
+/// Which school's directory a DIRECTORY-origin club was imported from.
+/// COMMUNITY clubs default to whichever the submitter said, same as any
+/// other field a moderator can review.
+enum School {
+  COLUMBIA
+  BARNARD
+}
+
+/// Whether a club is still meeting. Nobody scrapes this — it's set by a
+/// moderator (see `setClubActivityStatus`), which is why every bulk-imported
+/// club starts AWAITING_VERIFICATION rather than a guessed ACTIVE.
+enum ActivityStatus {
+  ACTIVE
+  INACTIVE
+  AWAITING_VERIFICATION
+}
+
+model Club {
+  id String @id @default(cuid())
+
+  origin ClubOrigin @default(DIRECTORY)
+  school School     @default(COLUMBIA)
+
+  /// Slug from the source URL (/studentgroup/<slug> for Columbia,
+  /// barnard:<slugified-name> for Barnard — its directory has no per-club
+  /// page to derive a stable id from). Stable across renames, so it's our
+  /// upsert key. Community clubs get a synthetic `community:<id>` value so
+  /// the uniqueness guarantee still holds.
+  sourceId   String  @unique
+  slug       String  @unique
+  name       String
+  /// Key for alphabetical browsing. 84 of 476 clubs begin with "Columbia",
+  /// which would pile a fifth of the directory under C, so the prefix is
+  /// stripped here while `name` stays untouched for display.
+  sortName   String
+  websiteUrl String?
+  /// Contact address from the directory. Public information — these are club
+  /// inboxes, not personal ones — but see the note in the club page component
+  /// about not making them trivially scrapable.
+  contactEmail String?
+  /// Social profile URLs listed by the club.
+  socialLinks String[] @default([])
+  /// Path on the source site this club came from. Null for community clubs
+  /// (no page in any directory) and for Barnard clubs (its directory has no
+  /// per-club page at all, just a name and a contact/social link).
+  sourcePath String?
+  /// Description from the source directory. Present for most clubs; 42 of 476
+  /// have none.
+  description String?
+
+  /// Field names whose value came from an approved community edit rather than
+  /// the directory — e.g. ["description", "websiteUrl", "categories"].
+  ///
+  /// The seed consults this and leaves those fields alone. Without it, every
+  /// approved correction would be silently reverted by the next `npm run seed`,
+  /// which is the kind of bug nobody notices until the third time someone fixes
+  /// the same broken URL.
+  editedFields String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Set by a moderator, never inferred. Null until the first time someone
+  /// does — a fresh club sits at the enum default (AWAITING_VERIFICATION)
+  /// with no date to show, rather than a fabricated "as of" timestamp.
+  activityStatus     ActivityStatus @default(AWAITING_VERIFICATION)
+  activityVerifiedAt DateTime?
+
+  // Denormalized aggregates, recomputed whenever a review is published or
+  // moderated. Cheap to maintain and keeps list pages to a single query.
+  //
+  // avgProfessional/avgSocial keep their original names even though the
+  // questions they answer were reworded ("professional development" /
+  // "community") — the underlying 1-5 scale and its meaning didn't change
+  // enough to justify a rename plus migration. avgOverall/avgSelectivity
+  // are genuinely gone: `howToJoinCounts` (a multi-select tally) isn't a
+  // 1-5 scale at all, and `avgRecommend` replaced the old yes/no
+  // `pctGladJoined` once "glad you joined" became a 1-5 dimension itself.
+  reviewCount     Int       @default(0)
+  avgProfessional Float?
+  avgSocial       Float?
+  avgCommitment   Float?
+  avgOrganization Float?
+  avgRecommend    Float?
+  /// Tally of `Review.howToJoin` answers across approved reviews, e.g.
+  /// `{"application": 4, "interview": 2}`. A Json blob rather than one
+  /// column per option so adding a 5th "how to join" answer later is a
+  /// data change in HOW_TO_JOIN_OPTIONS, not a migration.
+  howToJoinCounts Json      @default("{}")
+  lastReviewedAt  DateTime?
+
+  categories      ClubCategory[]
+  tags            ClubTag[]
+  reviews         Review[]
+  editSuggestions ClubEditSuggestion[]
+
+  @@index([reviewCount])
+  @@index([sortName])
+  @@index([avgProfessional])
+  @@index([avgSocial])
+}
+
+/// Whether a category comes from the source directory or is inferred by us.
+enum CategoryKind {
+  /// One of the 14 headings the source groups clubs under. Authoritative.
+  SOURCE
+  /// A cross-cutting interest area we derive from name + description, because
+  /// the source's headings are too coarse to answer "show me the CS clubs" —
+  /// those sit inside "Academic" and "Pre-Professional" alongside everything
+  /// else. Displayed separately so the distinction stays visible.
+  INTEREST
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  blurb     String?
+  kind      CategoryKind @default(SOURCE)
+  /// Historical — the UI now renders a static icon (src/lib/category-icons.ts,
+  /// keyed by slug) next to the category name instead of this.
+  emoji     String?
+  sortOrder Int          @default(0)
+
+  clubs ClubCategory[]
+
+  @@index([kind, sortOrder])
+}
+
+model ClubCategory {
+  clubId     String
+  categoryId String
+
+  /// Exactly one category per club is primary and drives its badge — always
+  /// the SOURCE category, since that one comes from the directory itself.
+  /// INTEREST categories are always secondary.
+  isPrimary Boolean @default(false)
+
+  club     Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([clubId, categoryId])
+  @@index([categoryId])
+}
+
+/// Where a club<->tag link came from. CURATED is set by us in the seed;
+/// COMMUNITY is promoted once enough reviews attach the same tag.
+enum TagSource {
+  CURATED
+  COMMUNITY
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  slug  String @unique
+  label String
+  /// Free-form grouping so the UI can render tags in sections. Intentionally a
+  /// string rather than an enum — the tag vocabulary is still being decided,
+  /// and a string means adding a group is a seed change, not a migration.
+  group       String?
+  description String?
+  sortOrder   Int     @default(0)
+
+  clubs   ClubTag[]
+  reviews ReviewTag[]
+}
+
+model ClubTag {
+  clubId String
+  tagId  String
+  source TagSource @default(CURATED)
+  /// How many published reviews attached this tag. Drives ordering and lets
+  /// community tags surface above rarely-cited ones.
+  count  Int       @default(0)
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clubId, tagId])
+  @@index([tagId])
+}
+
+// ---------------------------------------------------------------------------
+// Reviews
+// ---------------------------------------------------------------------------
+
+enum ReviewStatus {
+  /// Submitted, awaiting a moderator's first decision. Never shown publicly.
+  PENDING
+  /// Published and visible.
+  APPROVED
+  /// Was published, then hidden pending moderator decision after community
+  /// flags.
+  FLAGGED
+  /// Hidden permanently — either a first-time submission a moderator
+  /// declined, or a previously-published review taken down after flags.
+  REJECTED
+}
+
+/// Coarse school buckets — deliberately broad enough not to identify anyone.
+enum Affiliation {
+  COLUMBIA_CC
+  COLUMBIA_SEAS
+  COLUMBIA_GS
+  BARNARD
+  GRADUATE
+  OTHER
+}
+
+/// The reviewer's relationship to the club. Optional context only; it is not
+/// verified and does not gate anything.
+enum MemberRole {
+  CURRENT_MEMBER
+  FORMER_MEMBER
+  BOARD_MEMBER
+}
+
+model Review {
+  id     String @id @default(cuid())
+  clubId String
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  /// Global sequential id shown in the UI (e.g. "#142"), alongside the cuid
+  /// primary key everything internally joins on — a person referencing a
+  /// specific review needs something shorter and stable-looking than a cuid.
+  displayId Int @unique @default(autoincrement())
+
+  body String
+
+  // NOTE on scale length: see RATING_DIMENSIONS in src/lib/ratings.ts —
+  // All five dimensions are a 1-5 scale now (Organization used to be 1-3).
+  // The Int type doesn't enforce the range; zod does, at the point every
+  // value here is written.
+  //
+  // ratingProfessional/ratingSocial keep their original field names — see the
+  // comment on Club's aggregate fields for why. ratingCommitment is
+  // descriptive, not evaluative, the same way ratingSelectivity used to be: a
+  // 5 means "time sink", which is a fact about the club, not a bad score.
+  // ratingRecommend replaced the old standalone `gladJoined` boolean once
+  // "would you recommend this" became a 1-5 dimension like the rest.
+  ratingProfessional Int
+  ratingSocial       Int
+  ratingCommitment   Int
+  ratingOrganization Int
+  ratingRecommend    Int
+
+  /// Slugs from HOW_TO_JOIN_OPTIONS (src/lib/ratings.ts), multi-select. A
+  /// String[] rather than a Prisma enum so adding an option later is a data
+  /// change in that one array, not a migration — same reasoning as ClubTag's
+  /// free-form `group` field.
+  howToJoin String[] @default([])
+  /// Free text, only meaningful when "other" is in howToJoin above — a slug
+  /// array has nowhere to put prose, so it gets its own nullable column.
+  howToJoinOther String?
+
+  affiliation Affiliation?
+  role        MemberRole?
+  /// Academic year the reviewer was involved, e.g. 2025. Kept as a year rather
+  /// than a semester to blur the timeline slightly.
+  yearInvolved Int?
+
+  status ReviewStatus @default(PENDING)
+
+  /// Agree/disagree counts — see ReviewVote, which enforces one vote per IP
+  /// per review. Replaces the old unlimited, non-deduplicated helpfulCount.
+  agreeCount    Int @default(0)
+  disagreeCount Int @default(0)
+  flagCount     Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  /// Set when a moderator first approves the review, not at submission.
+  publishedAt DateTime?
+  /// Set when a moderator last acted on this review.
+  moderatedAt DateTime?
+
+  tags  ReviewTag[]
+  flags ReviewFlag[]
+  votes ReviewVote[]
+
+  @@index([clubId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+model ReviewTag {
+  reviewId String
+  tagId    String
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, tagId])
+  @@index([tagId])
+}
+
+enum VoteValue {
+  AGREE
+  DISAGREE
+}
+
+/// One row per (review, IP) — the unique constraint below is what actually
+/// enforces "one vote per IP", as a database guarantee rather than a
+/// client-side check a page refresh could get around.
+model ReviewVote {
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  ipHash String
+  value  VoteValue
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, ipHash])
+}
+
+enum FlagReason {
+  HARASSMENT
+  IDENTIFYING_INFO
+  SPAM
+  OFF_TOPIC
+  FACTUALLY_WRONG
+  OTHER
+}
+
+model ReviewFlag {
+  id       String @id @default(cuid())
+  reviewId String
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  reason FlagReason
+  note   String?
+  ipHash String?
+
+  createdAt DateTime @default(now())
+  /// Set by a moderator once the flag has been actioned either way.
+  resolvedAt DateTime?
+
+  @@index([reviewId])
+  @@index([resolvedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Community contributions
+//
+// Both models below are moderator-gated: nothing a visitor submits appears on
+// the site until someone approves it. That is deliberately the only gate —
+// unlike reviews, these carry no email verification. The content is factual
+// (a URL, a description) and a human checks it before publication, so demanding
+// a verified student address to report a dead link would be friction with
+// nothing behind it. Abuse is handled by rate limiting instead.
+// ---------------------------------------------------------------------------
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A proposed change to an existing club.
+///
+/// Every content field is nullable and null means "no change proposed", so a
+/// suggestion carries only what the submitter actually touched. That keeps the
+/// moderator's diff small and avoids a suggestion re-asserting stale values for
+/// fields it never intended to change.
+model ClubEditSuggestion {
+  id     String @id @default(cuid())
+  clubId String
+  club   Club   @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  name         String?
+  description  String?
+  websiteUrl   String?
+  contactEmail String?
+  /// Empty means no change. There is no way to express "remove every social
+  /// link" — that's a moderator edit, not a suggestion.
+  socialLinks   String[] @default([])
+  /// Empty means no change; otherwise the complete proposed set of slugs.
+  categorySlugs String[] @default([])
+
+  /// The submitter's explanation. Often the only thing that makes a suggestion
+  /// judgeable ("the site moved", "they merged with X last spring").
+  note String?
+  /// Optional, so a moderator can follow up on an ambiguous suggestion. Stored
+  /// in the clear because replying is the entire point — unlike a reviewer's
+  /// address, which we hash and discard.
+  submitterEmail String?
+
+  status        SubmissionStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  reviewedAt    DateTime?
+  moderatorNote String?
+  ipHash        String?
+
+  @@index([status, createdAt])
+  @@index([clubId, status])
+}
+
+/// A proposed new club that isn't in Columbia's directory.
+model ClubSubmission {
+  id String @id @default(cuid())
+
+  name          String
+  description   String?
+  websiteUrl    String?
+  contactEmail  String?
+  socialLinks   String[] @default([])
+  categorySlugs String[] @default([])
+
+  note           String?
+  submitterEmail String?
+
+  status        SubmissionStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  reviewedAt    DateTime?
+  moderatorNote String?
+  ipHash        String?
+
+  /// The club created when this was approved. Kept so the queue can link to the
+  /// result, and so approving twice is detectable.
+  createdClubId String? @unique
+
+  @@index([status, createdAt])
+}
+
+enum FeedbackKind {
+  BUG
+  SUGGESTION
+}
+
+/// Site feedback — a bug report or a suggestion, not tied to any club. Same
+/// moderator-gated shape as ClubEditSuggestion/ClubSubmission above (reuses
+/// SubmissionStatus), though the UI labels the two decisions "Mark resolved"
+/// / "Dismiss" rather than "Approve"/"Reject" — there's nothing to publish,
+/// just something to acknowledge.
+model SiteFeedback {
+  id      String       @id @default(cuid())
+  kind    FeedbackKind
+  message String
+
+  /// Optional, so a moderator can follow up — same reasoning as
+  /// ClubEditSuggestion.submitterEmail.
+  contactEmail String?
+  /// Page the visitor was on, auto-filled client-side from document.referrer.
+  /// Best-effort context for a bug report, not load-bearing.
+  pageUrl String?
+
+  status        SubmissionStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  reviewedAt    DateTime?
+  moderatorNote String?
+  ipHash        String?
+
+  @@index([status, createdAt])
+}
+
+/// Rate-limit ledger for anonymous actions. Rows are pruned by age, not kept.
+model SubmissionAttempt {
+  id String @id @default(cuid())
+  /// HMAC of the client IP — enough to count, not enough to identify.
+  ipHash    String
+  kind      String
+  createdAt DateTime @default(now())
+
+  @@index([ipHash, kind, createdAt])
+  @@index([createdAt])
+}

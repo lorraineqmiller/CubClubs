@@ -1,26 +1,330 @@
 @import "tailwindcss";
 
+/*
+ * CubClubs's palette. Columbia blue is famously pale (#B9D9EB) — usable as a
+ * wash but not as a colour you can put text on, so the interactive blue is a
+ * deepened version of it that clears WCAG AA against the surface.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Baby blue page background, with cards kept white so they lift off it.
+     Chosen at this lightness rather than full Columbia blue (#B9D9EB) because
+     --text-muted has to clear WCAG AA on it: body copy on /about, /guidelines
+     and every page header sits directly on the background, not on a card.
+     #B9D9EB drops muted text to 3.9:1; this holds it at 4.6:1. */
+  --bg: #d3e7f5;
+  --surface: #ffffff;
+  --surface-2: #f2f6f9;
+  /* Deep enough to read as a divider against the blue background, still soft
+     enough not to draw boxes around the white cards. */
+  --border: #c7d9e6;
+  --border-strong: #a9c3d6;
+  /* A visibly darker line for section dividers sitting on the homepage's
+     grainy multi-colour wash — --border reads as barely-there against a
+     background that's no longer flat, so those dividers need more than the
+     usual step up to --border-strong. A translucent near-black over
+     whatever's behind it stays legible across every hue in the gradient,
+     rather than being tuned to just one of them. */
+  --divider-strong: rgb(14 26 38 / 0.35);
+  --text: #0e1a26;
+  /* Deepened from #55677a so body copy clears AA not just on the baby-blue
+     background (4.6:1) but on the darkest point of the hero gradient (4.7:1),
+     where the old value fell to 4.0:1. */
+  --text-muted: #47596b;
+  /* Darkened along with the background — the old #7d8fa1 fell to 2.6:1 on baby
+     blue, which is too weak even for de-emphasised counts and captions. */
+  --text-faint: #68798a;
+  --accent: #1364a4;
+  --accent-hover: #0f5289;
+  --accent-soft: #e7f1f9;
+  --accent-ring: #9cc7e6;
+  /* Halfway between --accent and --accent-ring — used where --accent-ring
+     reads as too pale on its own, e.g. the "bClubs" half of the wordmark. */
+  --accent-muted: #5795c5;
+  /* Text/icon colour for anything sitting on --accent. Can't be plain white:
+     the dark theme's accent is a light blue, and white on it fails AA. */
+  --accent-contrast: #ffffff;
+  /* Barnard magenta, used sparingly to mark Barnard-specific affordances. */
+  --barnard: #9d2b6b;
+  --positive: #2f7d4f;
+  --caution: #8a5a10;
+  --danger: #a4302a;
+  --shadow: 0 1px 2px rgb(14 26 38 / 0.05), 0 8px 24px -12px rgb(14 26 38 / 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0a1119;
+    --surface: #101a25;
+    --surface-2: #16222f;
+    --border: #223141;
+    --border-strong: #33465a;
+    --divider-strong: rgb(0 0 0 / 0.4);
+    --text: #e8f0f7;
+    --text-muted: #9aaec1;
+    --text-faint: #75899c;
+    --accent: #6db4e8;
+    --accent-hover: #8cc6ef;
+    --accent-soft: #16293a;
+    --accent-ring: #2d5a7d;
+    --accent-muted: #4d87b2;
+    --accent-contrast: #08131d;
+    --barnard: #e585b5;
+    --positive: #6cc48d;
+    --caution: #d9a44a;
+    --danger: #e88a84;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--accent-ring);
+  --color-accent-muted: var(--accent-muted);
+  --color-on-accent: var(--accent-contrast);
+  --color-barnard: var(--barnard);
+  --color-positive: var(--positive);
+  --color-caution: var(--caution);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-dongle);
+  --font-mono: var(--font-geist-mono);
+  --shadow-card: var(--shadow);
+  --font-dynapuff: var(--font-dynapuff);
+}
+
+/*
+ * Type ramp, rescaled for Dongle.
+ *
+ * Dongle draws at roughly 0.58× the optical size of a normal sans at the same
+ * font-size — measured on its x-height and cap height — so the stock Tailwind
+ * ramp renders it near-illegibly small. Every step is multiplied by 1.7 to put
+ * the letters back at their previous reading size.
+ *
+ * Scaling the root font-size instead would have been one line, but Tailwind's
+ * spacing scale is rem-based too, so the entire layout would have inflated with
+ * the text. Overriding the ramp moves type only.
+ *
+ * The line-heights stay at their original *absolute* values, so vertical rhythm
+ * is unchanged, and the `--leading-*` ratios are divided by the same 1.7 — a
+ * ratio of 1.625 against a 1.7× font-size would otherwise open up to nearly
+ * double leading around glyphs that never got bigger.
+ */
+@theme {
+  --text-xs: 1.275rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 1.4875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1.7rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.9125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 2.125rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 2.55rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 3.1875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 3.825rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl: 5.1rem;
+  --text-5xl--line-height: 3rem;
+  --text-6xl: 6.375rem;
+  --text-6xl--line-height: 3.75rem;
+
+  --leading-none: 0.59;
+  --leading-tight: 0.74;
+  --leading-snug: 0.81;
+  --leading-normal: 0.88;
+  --leading-relaxed: 0.96;
+  --leading-loose: 1.18;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-dongle), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* One consistent focus treatment for keyboard users everywhere. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Tabular figures so score numbers don't change width between values. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Opt out of the Dongle type ramp.
+ *
+ * The 1.7× multiplier above exists only to compensate for Dongle's unusually
+ * small glyphs. Text set in a normal-metric family — the DynaPuff wordmark,
+ * monospaced email addresses — inherits that multiplier and renders 70% too
+ * large. Dividing it back out in `em` restores the intended size at whatever
+ * step of the ramp the element happens to sit on, so this needs no per-element
+ * numbers.
+ */
+.optical-reset {
+  font-size: calc(1em / 1.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Grainy multi-tone wash, the background for the whole homepage rather than
+ * just the hero.
+ *
+ * Two things do the work: a white-then-blue radial pair up near the hero (the
+ * only spot with headline text that needs the extra contrast headroom), and a
+ * 4-stop linear-gradient base that carries the actual colour variety — blue,
+ * into teal, back to blue — because it's the one layer that naturally spans
+ * the full page height. A radial bloom sized to the hero would never be seen
+ * again by the time you scroll to "Latest reviews"; the linear base is why
+ * teal shows up throughout, not just bookended at the very top and bottom.
+ *
+ * Every stop keeps roughly the same lightness and only shifts hue, so
+ * contrast against --text-muted stays ~4.7:1+ everywhere without having to
+ * special-case any one stop. The two radial blooms are centred just outside
+ * the box (e.g. "108%") rather than on it — by the time their fade reaches
+ * the visible edge they're most of the way to fully transparent, which is
+ * what actually keeps a "0.5 alpha" bloom safe over text; centring one ON the
+ * edge instead means the full alpha shows exactly where copy sits.
+ */
+.hero-canvas {
+  /* Grain dials. Turn --grain-opacity up for more, down for less; it's the only
+     value worth touching. --grain-scale shrinks the noise tile, which makes the
+     speckle finer without changing how strong it is. */
+  --grain-opacity: 0.85;
+  --grain-scale: 120px;
+
+  position: relative;
+  isolation: isolate;
+  /* The footer's own mt-20 is a sibling margin that sits entirely outside this
+     box — on every other page that just continues the same flat --bg
+     seamlessly, but here it would leave a flat, grain-less strip between the
+     gradient and the footer. Cancel it with a matching negative margin, then
+     add it back as padding so the same visual gap is painted by this
+     background instead of the plain page background behind it. */
+  margin-bottom: -5rem;
+  padding-bottom: 5rem;
+  background-color: var(--bg);
+  /* Sized in vw/vh rather than % so the blooms keep a fixed pixel size instead
+     of stretching as the page grows tall; no-repeat stops that fixed-size tile
+     from tiling down a page taller than it is. Deliberately NOT
+     background-attachment: fixed — that pins the gradient to the viewport so
+     it doesn't move as you scroll, which read as static/stuck rather than
+     part of the page. */
+  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(
+      70vw 75vh at 6% 0%,
+      rgb(255 255 255 / 0.95) 0%,
+      rgb(255 255 255 / 0) 58%
+    ),
+    radial-gradient(
+      42vw 55vh at 100% -4%,
+      rgb(19 100 164 / 0.38) 0%,
+      rgb(19 100 164 / 0) 66%
+    ),
+    linear-gradient(
+      168deg,
+      #e0edfb 0%,
+      #cceff0 32%,
+      #c4dff3 62%,
+      #abd7ed 100%
+    );
+}
+
+/*
+ * The grain itself: static speckle, tiled. Inline SVG so it costs no request
+ * and can't 404.
+ *
+ * The noise is turned into *alpha* rather than painted as grey pixels. The
+ * feColorMatrix takes the turbulence's red channel as alpha (`0.95 … -0.34`
+ * biases it so most of the tile is fully transparent) and forces RGB to black,
+ * giving scattered dark specks over a clear field.
+ *
+ * Two earlier attempts were worse, for opposite reasons: flat grey noise at
+ * plain opacity just desaturates the gradient, and `mix-blend-mode: overlay`
+ * does almost nothing on a light background — at these lightness values overlay
+ * moves the base by about ±3%, so turning the opacity up barely registers.
+ * Darkening speckle is what actually reads as grain on pale colours.
+ *
+ * numOctaves is 1 on purpose: extra octaves pile on low-frequency detail, which
+ * looks like fog rather than film grain.
+ */
+.hero-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-repeat: repeat;
+  background-size: var(--grain-scale) var(--grain-scale);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.95 0 0 0 -0.34'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+
+/* Content sits above the grain: both are positioned, so paint order is DOM
+   order and the ::before comes first. */
+.hero-canvas > * {
+  position: relative;
+}
+
+@media (prefers-color-scheme: dark) {
+  .hero-canvas {
+    background-image:
+      radial-gradient(
+        70vw 75vh at 6% 0%,
+        rgb(109 180 232 / 0.16) 0%,
+        rgb(109 180 232 / 0) 58%
+      ),
+      radial-gradient(
+        50vw 55vh at 96% 6%,
+        rgb(19 100 164 / 0.5) 0%,
+        rgb(19 100 164 / 0) 62%
+      ),
+      linear-gradient(
+        168deg,
+        #193a57 0%,
+        #174145 32%,
+        #122d3f 62%,
+        #0f2633 100%
+      );
+  }
+  /* Black speckle is invisible on a dark hero, so the dark theme gets the same
+     noise inverted to white. */
+  .hero-canvas::before {
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.95 0 0 0 -0.34'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23g)'/%3E%3C/svg%3E");
+  }
+}
+
+/* Anyone who has asked the OS for more contrast gets a flat background — the
+   whole point of the wash is decorative. */
+@media (prefers-contrast: more) {
+  .hero-canvas {
+    background-image: none;
+  }
+  .hero-canvas::before {
+    display: none;
+  }
 }

@@ -1,0 +1,44 @@
+{
+  "_readme": [
+    "Hand corrections on top of the interest-category rules in",
+    "scripts/classify.ts. Keys are the club's slug from /studentgroup/<slug>.",
+    "",
+    "Source categories are NOT overridable here — those come straight from the",
+    "directory's own headings and are authoritative. Only the inferred interest",
+    "categories need correcting.",
+    "",
+    "Check any change with: npm run classify:report -- <interest-slug>"
+  ],
+
+  "displayNames": {},
+
+  "removeInterests": {
+    "_comment_incidental_health": "Health words appearing once in a description about something else.",
+    "columbia-policy-institute": ["health"],
+    "habitat-humanity": ["health"],
+    "columbia-vegan-society": ["health"],
+
+    "_comment_incidental_environment": "Mentions 'environmental' about conditions abroad, not sustainability work.",
+    "doctors-without-borders-student-chapter-columbia-university": ["environment"],
+
+    "_comment_incidental_law": "Provides legal referrals as part of survivor support; not a pre-law group.",
+    "sexual-violence-response-peer-advocates-and-peer-educators": ["law"],
+
+    "_comment_incidental_finance": "'consulting' means consulting with faculty; 'financial' means financial aid.",
+    "columbia-college-committee-instruction": ["finance"],
+    "college-road": ["finance"],
+    "lets-get-ready": ["finance"]
+  },
+
+  "addInterests": {
+    "_comment_cs": "Real tech clubs whose descriptions avoid the obvious keywords.",
+    "columbia-university-gaming-group": ["cs"],
+    "columbia-quant-group": ["cs"],
+    "robotics": ["cs"],
+
+    "_comment_law": "A corporate law group the finance rules caught but the law rules missed.",
+    "columbia-corporate-law-and-business-association": ["law"]
+  },
+
+  "tags": {}
+}
