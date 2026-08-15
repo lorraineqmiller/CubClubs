@@ -1,3 +1,5 @@
+> *To be published by September 2026*
+
 # CubClubs
 
 Anonymous reviews of student organizations at Columbia and Barnard — CULPA, but
