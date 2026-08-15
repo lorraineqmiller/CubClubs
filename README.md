@@ -1,4 +1,4 @@
-> *To be published by September 2026*
+> *Site to be published by September 2026*
 
 # CubClubs
 
